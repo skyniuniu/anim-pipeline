@@ -176,7 +176,7 @@ function renderAll(){
   TI.forEach(function(t){h+='<button class="filter-btn'+(curFilter===t?' active':'')+'" onclick="setFilter(\''+t+'\')">'+TL[t]+'</button>'});
   h+='<input class="search-box" placeholder="🔍 搜索任务名称..." value="'+esc(curSearch)+'" oninput="setSearch(this.value)" style="margin:0 0 0 auto"></div>';
   h+='<div class="legend">'+lgd('var(--yellow)','制作中')+lgd('var(--accent)','GAC冲分')+lgd('var(--green)','动态完成')+lgd('#ffd700','T0 核心')+lgd('#c0c0c0','T1 主力')+lgd('var(--purple)','调优优化')+'</div>';
-  h+='<div style="margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn-ghost" style="font-size:11px;padding:5px 10px" onclick="resetAllProgress()">🔄 重置所有进度</button><button class="btn-ghost" style="font-size:11px;padding:5px 10px" onclick="exportExcel()">📥 导出 Excel</button><button class="btn-ghost" style="font-size:11px;padding:5px 10px" onclick="document.getElementById(\'import-file\').click()">📤 导入 Excel</button><input type="file" id="import-file" accept=".xlsx,.xls" style="display:none" onchange="importExcel(this)"></div>';
+  h+='<div style="margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn-ghost" style="font-size:11px;padding:5px 10px" onclick="resetAllProgress()">🔄 重置所有进度</button><button class="btn-ghost" style="font-size:11px;padding:5px 10px" onclick="exportExcel()">📥 导出 Excel</button><button class="btn-ghost" style="font-size:11px;padding:5px 10px" onclick="document.getElementById(\'import-file\').click()">📤 导入 Excel</button><button class="btn-ghost" style="font-size:11px;padding:5px 10px;background:var(--green);border-color:var(--green);color:#fff" onclick="syncToGitHub()">📤 同步到 GitHub</button><input type="file" id="import-file" accept=".xlsx,.xls" style="display:none" onchange="importExcel(this)"></div>';
   /* 任务策划对照表 */
   h+='<div class="section-title">📋 任务策划对照 <div class="line"></div></div>';
   h+='<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;overflow-x:auto;margin-bottom:20px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:var(--table-head)"><th style="padding:8px 12px;color:var(--subtext);font-weight:600;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">任务</th><th style="padding:8px 12px;color:var(--subtext);font-weight:600;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">层级</th><th style="padding:8px 12px;color:var(--subtext);font-weight:600;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">进度</th><th style="padding:8px 12px;color:var(--subtext);font-weight:600;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">负责人</th><th style="padding:8px 12px;color:var(--subtext);font-weight:600;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap">策划</th></tr></thead><tbody>';
@@ -213,4 +213,57 @@ function exportExcel(){if(typeof XLSX==='undefined'){toast('xlsx 库未加载');
 
 function importExcel(input){if(!input.files||!input.files[0])return;if(typeof XLSX==='undefined'){toast('xlsx 库未加载');return}var f=input.files[0];var reader=new FileReader();reader.onload=function(e){try{var wb=XLSX.read(e.target.result,{type:'array'});var ws=wb.Sheets[wb.SheetNames[0]];var data=XLSX.utils.sheet_to_json(ws,{header:1});if(data.length<2){toast('数据为空');return}var headers=data[0];for(var i=1;i<data.length;i++){var row=data[i];if(!row[0])continue;var gun=String(row[0]).trim();var found=animTasks.find(function(t){return t.gun===gun});if(!found){var mx=animTasks.reduce(function(m,a){return Math.max(m,a.id)},0);found={id:mx+1,gun:gun,tier:'iter',estDays:10,spentDays:0,gacScore:0,dynamicDone:false,follower:'',planner:'',milestone:'',deadline:'',gcpId:null,tasks:[]};if(!found.L1&&found.tier==='t1'||found.tier==='iter'){found.L1=0;found.L2=0;found.L3=0}animTasks.push(found)}if(row[1]){var tierKey=Object.keys(TL).find(function(k){return TL[k]===row[1]});if(tierKey)found.tier=tierKey}if(row[2]!=null)found.estDays=parseFloat(row[2])||0;if(row[3]!=null)found.gacScore=parseFloat(row[3])||0;if(row[5]){/* stage info */}if(row[6])found.follower=row[6];if(row[7])found.planner=row[7];if(row[8])found.milestone=row[8];if(row[9])found.deadline=row[9];if(row[10]!=null)found.gcpId=row[10]}saveAll();renderAll();toast('导入完成')}catch(err){toast('导入失败：'+err.message)}finally{input.value=''}};reader.readAsArrayBuffer(f)}
 
+// ====== 直接同步到 GitHub ======
+var GITHUB_TOKEN = '';
+var GITHUB_REPO = 'skyniuniu/anim-pipeline';
+var GITHUB_BRANCH = 'main';
+var GITHUB_FILE = 'anim-pipeline.html';
+
+function syncToGitHub(){
+  var token = prompt('请输入 GitHub Token：', GITHUB_TOKEN);
+  if(!token) { toast('已取消'); return; }
+  GITHUB_TOKEN = token;
+  
+  var btn = event ? event.target : document.querySelector('[onclick="syncToGitHub()"]');
+  if(btn) { btn.textContent = '⏳ 同步中...'; btn.disabled = true; }
+  
+  // 先从 GitHub 获取当前文件信息（拿到 sha）
+  var apiUrl = 'https://api.github.com/repos/' + GITHUB_REPO + '/contents/' + GITHUB_FILE + '?ref=' + GITHUB_BRANCH;
+  
+  fetch(apiUrl, {
+    headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json' }
+  }).then(function(r){ return r.json(); }).then(function(data){
+    if(data.message && data.message !== 'Not Found') { throw new Error(data.message); }
+    var sha = data.sha || null;
+    
+    // 构造新的 HTML，用当前数据替换初始化数据
+    var json = JSON.stringify(animTasks);
+    // 获取当前页面的完整 HTML 结构，替换 animTasks 初始化数据
+    var fullHtml = document.documentElement.outerHTML;
+    // 用正则替换 var animTasks=[...] 为当前数据
+    fullHtml = fullHtml.replace(/var animTasks=\[.*?\];(?:\s*var TL=)/, 'var animTasks=' + json + ';\nvar TL=');
+    
+    var content = btoa(unescape(encodeURIComponent(fullHtml)));
+    
+    var body = {
+      message: 'sync data ' + new Date().toLocaleString('zh-CN'),
+      content: content,
+      branch: GITHUB_BRANCH
+    };
+    if(sha) body.sha = sha;
+    
+    return fetch(apiUrl, {
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  }).then(function(r){ return r.json(); }).then(function(res){
+    if(res.message && res.message !== 'Not Found') { throw new Error(res.message); }
+    toast('✅ 已同步到 GitHub！刷新 GitHub Pages 即可生效');
+    if(btn) { btn.textContent = '📤 同步到 GitHub'; btn.disabled = false; }
+  }).catch(function(err){
+    toast('❌ 同步失败：' + err.message);
+    if(btn) { btn.textContent = '📤 同步到 GitHub'; btn.disabled = false; }
+  });
+}
 loadAll();renderAll();</script></body></html>
